@@ -11,10 +11,8 @@ variables
     waiters = [p \in procs  |-> 0];
     
 define {
-    ExcInv == \E prcs \in SUBSET procs: 
-            (\A p \in prcs : pc[p] = "u2") 
-            /\ (\A q \in (procs \ prcs): pc[q] # "u2")
-            /\ Cardinality(prcs) <= k                    
+
+     ExcInv == Cardinality({p \in procs: pc[p] = "u2"}) <= k
 }
 
 procedure acquire(acquires)
@@ -44,12 +42,13 @@ a2:        if (count = available) {
 
                waiters[self] := waitingCnt;
             
-               count := remaining;
-               
-a3:            return
+               count := remaining
                
            };
-                
+           
+a3:        if (retVal){
+              return;
+           }      
        } 
 }
 
@@ -78,12 +77,14 @@ r2:        if (count = available) {
 
                waiters[self] := waitingCnt;
             
-               count := remaining;
-               
-r3:            return
+               count := remaining
 
            };
-                
+           
+r3:        if (retVal){
+              return;
+           }  
+              
        } 
 }
 
@@ -99,18 +100,15 @@ u3:         call release(1);
 
  ***************************************************************************)
 \* BEGIN TRANSLATION
-\* Procedure variable available of procedure acquire at line 23 col 5 changed to available_
-\* Procedure variable waitingCnt of procedure acquire at line 24 col 5 changed to waitingCnt_
-\* Procedure variable remaining of procedure acquire at line 25 col 5 changed to remaining_
-\* Procedure variable retVal of procedure acquire at line 26 col 5 changed to retVal_
+\* Procedure variable available of procedure acquire at line 21 col 5 changed to available_
+\* Procedure variable waitingCnt of procedure acquire at line 22 col 5 changed to waitingCnt_
+\* Procedure variable remaining of procedure acquire at line 23 col 5 changed to remaining_
+\* Procedure variable retVal of procedure acquire at line 24 col 5 changed to retVal_
 CONSTANT defaultInitValue
 VARIABLES procs, count, k, waiters, pc, stack
 
 (* define statement *)
-ExcInv == \E prcs \in SUBSET procs:
-        (\A p \in prcs : pc[p] = "u2")
-        /\ (\A q \in (procs \ prcs): pc[q] # "u2")
-        /\ Cardinality(prcs) <= k
+ExcInv == Cardinality({p \in procs: pc[p] = "u2"}) <= k
 
 VARIABLES acquires, available_, waitingCnt_, remaining_, retVal_, releases, 
           available, waitingCnt, remaining, retVal
@@ -160,20 +158,24 @@ a2(self) == /\ pc[self] = "a2"
                   THEN /\ waitingCnt_' = [waitingCnt_ EXCEPT ![self] = available_[self] - remaining_[self] + waiters[self]]
                        /\ waiters' = [waiters EXCEPT ![self] = waitingCnt_'[self]]
                        /\ count' = remaining_[self]
-                       /\ pc' = [pc EXCEPT ![self] = "a3"]
-                  ELSE /\ pc' = [pc EXCEPT ![self] = "a1"]
+                  ELSE /\ TRUE
                        /\ UNCHANGED << count, waiters, waitingCnt_ >>
+            /\ pc' = [pc EXCEPT ![self] = "a3"]
             /\ UNCHANGED << procs, k, stack, acquires, available_, remaining_, 
                             releases, available, waitingCnt, remaining, retVal >>
 
 a3(self) == /\ pc[self] = "a3"
-            /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-            /\ available_' = [available_ EXCEPT ![self] = Head(stack[self]).available_]
-            /\ waitingCnt_' = [waitingCnt_ EXCEPT ![self] = Head(stack[self]).waitingCnt_]
-            /\ remaining_' = [remaining_ EXCEPT ![self] = Head(stack[self]).remaining_]
-            /\ retVal_' = [retVal_ EXCEPT ![self] = Head(stack[self]).retVal_]
-            /\ acquires' = [acquires EXCEPT ![self] = Head(stack[self]).acquires]
-            /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
+            /\ IF retVal_[self]
+                  THEN /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
+                       /\ available_' = [available_ EXCEPT ![self] = Head(stack[self]).available_]
+                       /\ waitingCnt_' = [waitingCnt_ EXCEPT ![self] = Head(stack[self]).waitingCnt_]
+                       /\ remaining_' = [remaining_ EXCEPT ![self] = Head(stack[self]).remaining_]
+                       /\ retVal_' = [retVal_ EXCEPT ![self] = Head(stack[self]).retVal_]
+                       /\ acquires' = [acquires EXCEPT ![self] = Head(stack[self]).acquires]
+                       /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
+                  ELSE /\ pc' = [pc EXCEPT ![self] = "a1"]
+                       /\ UNCHANGED << stack, acquires, available_, 
+                                       waitingCnt_, remaining_, retVal_ >>
             /\ UNCHANGED << procs, count, k, waiters, releases, available, 
                             waitingCnt, remaining, retVal >>
 
@@ -197,21 +199,25 @@ r2(self) == /\ pc[self] = "r2"
                   THEN /\ waitingCnt' = [waitingCnt EXCEPT ![self] = available[self] - remaining[self] + waiters[self]]
                        /\ waiters' = [waiters EXCEPT ![self] = waitingCnt'[self]]
                        /\ count' = remaining[self]
-                       /\ pc' = [pc EXCEPT ![self] = "r3"]
-                  ELSE /\ pc' = [pc EXCEPT ![self] = "r1"]
+                  ELSE /\ TRUE
                        /\ UNCHANGED << count, waiters, waitingCnt >>
+            /\ pc' = [pc EXCEPT ![self] = "r3"]
             /\ UNCHANGED << procs, k, stack, acquires, available_, waitingCnt_, 
                             remaining_, retVal_, releases, available, 
                             remaining >>
 
 r3(self) == /\ pc[self] = "r3"
-            /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-            /\ available' = [available EXCEPT ![self] = Head(stack[self]).available]
-            /\ waitingCnt' = [waitingCnt EXCEPT ![self] = Head(stack[self]).waitingCnt]
-            /\ remaining' = [remaining EXCEPT ![self] = Head(stack[self]).remaining]
-            /\ retVal' = [retVal EXCEPT ![self] = Head(stack[self]).retVal]
-            /\ releases' = [releases EXCEPT ![self] = Head(stack[self]).releases]
-            /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
+            /\ IF retVal[self]
+                  THEN /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
+                       /\ available' = [available EXCEPT ![self] = Head(stack[self]).available]
+                       /\ waitingCnt' = [waitingCnt EXCEPT ![self] = Head(stack[self]).waitingCnt]
+                       /\ remaining' = [remaining EXCEPT ![self] = Head(stack[self]).remaining]
+                       /\ retVal' = [retVal EXCEPT ![self] = Head(stack[self]).retVal]
+                       /\ releases' = [releases EXCEPT ![self] = Head(stack[self]).releases]
+                       /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
+                  ELSE /\ pc' = [pc EXCEPT ![self] = "r1"]
+                       /\ UNCHANGED << stack, releases, available, waitingCnt, 
+                                       remaining, retVal >>
             /\ UNCHANGED << procs, count, k, waiters, acquires, available_, 
                             waitingCnt_, remaining_, retVal_ >>
 
@@ -270,5 +276,5 @@ Spec == Init /\ [][Next]_vars
 \* END TRANSLATION
 =============================================================================
 \* Modification History
-\* Last modified Wed May 06 04:57:33 MSK 2020 by anastasia
+\* Last modified Sat May 09 01:01:42 MSK 2020 by anastasia
 \* Created Tue Mar 24 22:27:24 MSK 2020 by anastasia
