@@ -2,24 +2,22 @@
 EXTENDS Naturals, Sequences, TLC, FiniteSets
 
 CONSTANTS PROCS,
-          MAXVAL,     
-          NUM,          \* the number of threads that can capture the semaphore
-          PERMITS
+          SEMAFPRE_CAPACITY,     
+          NUM_OF_PERMITS
           
-ASSUME /\ MAXVAL \in Nat\{0}
-       /\ Cardinality(PROCS) <= MAXVAL + 1
-       /\ NUM \in Nat\{0}
-       /\ PERMITS \in Nat\{0}
+ASSUME /\ SEMAFPRE_CAPACITY \in Nat\{0}
+       /\ NUM_OF_PERMITS \in Nat\{0}
+       /\ SEMAFPRE_CAPACITY >= NUM_OF_PERMITS
 
 (***************************************************************************
 --algorithm GridCacheSemaphoreImpl {
 
 variables
-    count = NUM;
+    count = SEMAFPRE_CAPACITY;
     
 define {
-    TypeInv == count \in 0..NUM
-    ExcInv == Cardinality({p \in PROCS: pc[p] = "u2"}) <= NUM
+    TypeInv == count \in 0..SEMAFPRE_CAPACITY
+    ExcInv == Cardinality({p \in PROCS: pc[p] = "u2"}) <= SEMAFPRE_CAPACITY
 }
 
 procedure acquire(acquires)
@@ -82,24 +80,24 @@ r3:            return
 process (proc \in PROCS)
     {
 u1:   while (TRUE) {
-            call acquire(PERMITS);
+            call acquire(NUM_OF_PERMITS);
 u2:         skip;
-u3:         call release(PERMITS);
+u3:         call release(NUM_OF_PERMITS);
       }
     }
 }
 
  ***************************************************************************)
 \* BEGIN TRANSLATIONNUMberNUMberNUMber
-\* Procedure variable available of procedure acquire at line 28 col 5 changed to available_
-\* Procedure variable remaining of procedure acquire at line 29 col 5 changed to remaining_
-\* Procedure variable retVal of procedure acquire at line 30 col 5 changed to retVal_
+\* Procedure variable available of procedure acquire at line 26 col 5 changed to available_
+\* Procedure variable remaining of procedure acquire at line 27 col 5 changed to remaining_
+\* Procedure variable retVal of procedure acquire at line 28 col 5 changed to retVal_
 CONSTANT defaultInitValue
 VARIABLES count, pc, stack
 
 (* define statement *)
-TypeInv == count \in 0..NUM
-ExcInv == Cardinality({p \in PROCS: pc[p] = "u2"}) <= NUM
+TypeInv == count \in 0..SEMAFPRE_CAPACITY
+ExcInv == Cardinality({p \in PROCS: pc[p] = "u2"}) <= SEMAFPRE_CAPACITY
 
 VARIABLES acquires, available_, remaining_, retVal_, releases, available, 
           remaining, retVal
@@ -110,7 +108,7 @@ vars == << count, pc, stack, acquires, available_, remaining_, retVal_,
 ProcSet == (PROCS)
 
 Init == (* Global variables *)
-        /\ count = NUM
+        /\ count = SEMAFPRE_CAPACITY
         (* Procedure acquire *)
         /\ acquires = [ self \in ProcSet |-> defaultInitValue]
         /\ available_ = [ self \in ProcSet |-> defaultInitValue]
@@ -190,7 +188,7 @@ r3(self) == /\ pc[self] = "r3"
 release(self) == r1(self) \/ r2(self) \/ r3(self)
 
 u1(self) == /\ pc[self] = "u1"
-            /\ /\ acquires' = [acquires EXCEPT ![self] = PERMITS]
+            /\ /\ acquires' = [acquires EXCEPT ![self] = NUM_OF_PERMITS]
                /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "acquire",
                                                         pc        |->  "u2",
                                                         available_ |->  available_[self],
@@ -211,7 +209,7 @@ u2(self) == /\ pc[self] = "u2"
                             retVal_, releases, available, remaining, retVal >>
 
 u3(self) == /\ pc[self] = "u3"
-            /\ /\ releases' = [releases EXCEPT ![self] = PERMITS]
+            /\ /\ releases' = [releases EXCEPT ![self] = NUM_OF_PERMITS]
                /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "release",
                                                         pc        |->  "u1",
                                                         available |->  available[self],
@@ -235,5 +233,5 @@ Spec == Init /\ [][Next]_vars
 \* END TRANSLATION
 =============================================================================
 \* Modification History
-\* Last modified Sat May 09 04:55:59 MSK 2020 by anastasia
+\* Last modified Mon May 18 15:58:00 MSK 2020 by anastasia
 \* Created Tue Mar 24 22:27:24 MSK 2020 by anastasia
