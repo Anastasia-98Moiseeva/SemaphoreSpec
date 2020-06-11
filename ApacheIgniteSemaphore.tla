@@ -39,9 +39,12 @@ macro start_transaction()
 macro commit_transaction(valCount)
 {
       if (txStatus = "started") {
+           lock[self] := 0;
            count := valCount;
            succeedOp[self] := TRUE;
            txStatus := "committed";
+      } else {
+           txStatus := "aborted";
       }
 }
 
@@ -132,10 +135,10 @@ u3:         while (succeedOp[self] = FALSE) {
 
  ***************************************************************************)
 \* BEGIN TRANSLATIONNUMberNUMberNUMber
-\* Procedure variable available of procedure acquire at line 82 col 5 changed to available_
-\* Procedure variable remaining of procedure acquire at line 83 col 5 changed to remaining_
-\* Procedure variable available of procedure release at line 100 col 5 changed to available_r
-\* Procedure variable remaining of procedure release at line 101 col 5 changed to remaining_r
+\* Procedure variable available of procedure acquire at line 85 col 5 changed to available_
+\* Procedure variable remaining of procedure acquire at line 86 col 5 changed to remaining_
+\* Procedure variable available of procedure release at line 103 col 5 changed to available_r
+\* Procedure variable remaining of procedure release at line 104 col 5 changed to remaining_r
 CONSTANT defaultInitValue
 VARIABLES count, lock, succeedOp, txStatus, pc, stack
 
@@ -220,15 +223,16 @@ s4(self) == /\ pc[self] = "s4"
 
 tc(self) == /\ pc[self] = "tc"
             /\ IF txStatus = "started"
-                  THEN /\ count' = valCount[self]
+                  THEN /\ lock' = [lock EXCEPT ![self] = 0]
+                       /\ count' = valCount[self]
                        /\ succeedOp' = [succeedOp EXCEPT ![self] = TRUE]
                        /\ txStatus' = "committed"
-                  ELSE /\ TRUE
-                       /\ UNCHANGED << count, succeedOp, txStatus >>
+                  ELSE /\ txStatus' = "aborted"
+                       /\ UNCHANGED << count, lock, succeedOp >>
             /\ pc' = [pc EXCEPT ![self] = "s5"]
-            /\ UNCHANGED << lock, stack, available, remaining, retVal, 
-                            valCount, acquires, available_, remaining_, 
-                            releases, available_r, remaining_r >>
+            /\ UNCHANGED << stack, available, remaining, retVal, valCount, 
+                            acquires, available_, remaining_, releases, 
+                            available_r, remaining_r >>
 
 s5(self) == /\ pc[self] = "s5"
             /\ lock' = [lock EXCEPT ![self] = 0]
@@ -391,5 +395,5 @@ Spec == Init /\ [][Next]_vars
 \* END TRANSLATION
 =============================================================================
 \* Modification History
-\* Last modified Fri Jun 12 02:46:04 MSK 2020 by anastasia
+\* Last modified Fri Jun 12 02:48:47 MSK 2020 by anastasia
 \* Created Tue Mar 24 22:27:24 MSK 2020 by anastasia
