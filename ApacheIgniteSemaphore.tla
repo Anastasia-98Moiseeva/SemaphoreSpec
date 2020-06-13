@@ -32,14 +32,12 @@ define {
 
 macro start_transaction()
 {
-      lock[self] := 1;
       txStatus := "started";
 }
 
 macro commit_transaction(valCount)
 {
       if (txStatus = "started") {
-           lock[self] := 0;
            count := valCount;
            succeedOp[self] := TRUE;
            txStatus := "committed";
@@ -48,7 +46,7 @@ macro commit_transaction(valCount)
       }
 }
 
-procedure set_state(available, remaining)
+procedure compare_and_set_state(expVal, newVal)
 
 variables 
     retVal = FALSE;
@@ -56,24 +54,26 @@ variables
 {
 ts:        start_transaction();
 
+l1:        lock[self] := 1;
+
 s1:        valCount := count;
        
 
-s2:        if (valCount = available) {
+s2:        if (valCount = expVal) {
                retVal := TRUE
            };
                   
 s3:        if (retVal) { 
 
-s4:            valCount := remaining;
+s4:            valCount := newVal;
 
 tc:            commit_transaction(valCount);
                                                                            
            };
 
-s5:        lock[self] := 0;
+l2:        lock[self] := 0;
            
-s6:        await LocksNotExist;
+s5:        await LocksNotExist;
            txStatus := "none";
 
            return; 
@@ -91,7 +91,7 @@ a1:    while (TRUE) {
            remaining := available - acquires;  
                     
 a2:        await remaining >= 0;  
-           call set_state(available, remaining);
+           call compare_and_set_state(available, remaining);
            
 a4:        return 
        };
@@ -108,7 +108,7 @@ r1:    while (TRUE) {
            available := count;
            remaining := available + releases;
            
-r2:        call set_state(available, remaining);
+r2:        call compare_and_set_state(available, remaining);
            
 r3:        return 
        };
@@ -137,8 +137,6 @@ u3:         while (succeedOp[self] = FALSE) {
 \* BEGIN TRANSLATIONNUMberNUMberNUMber
 \* Procedure variable available of procedure acquire at line 85 col 5 changed to available_
 \* Procedure variable remaining of procedure acquire at line 86 col 5 changed to remaining_
-\* Procedure variable available of procedure release at line 103 col 5 changed to available_r
-\* Procedure variable remaining of procedure release at line 104 col 5 changed to remaining_r
 CONSTANT defaultInitValue
 VARIABLES count, lock, succeedOp, txStatus, pc, stack
 
@@ -151,12 +149,12 @@ TxInv == txStatus \in {"none", "started", "committed", "aborted"}
 
 LocksNotExist == \A p \in PROCS : lock[p] = 0
 
-VARIABLES available, remaining, retVal, valCount, acquires, available_, 
-          remaining_, releases, available_r, remaining_r
+VARIABLES expVal, newVal, retVal, valCount, acquires, available_, remaining_, 
+          releases, available, remaining
 
-vars == << count, lock, succeedOp, txStatus, pc, stack, available, remaining, 
+vars == << count, lock, succeedOp, txStatus, pc, stack, expVal, newVal, 
            retVal, valCount, acquires, available_, remaining_, releases, 
-           available_r, remaining_r >>
+           available, remaining >>
 
 ProcSet == (PROCS)
 
@@ -165,9 +163,9 @@ Init == (* Global variables *)
         /\ lock = [p \in PROCS |-> 0]
         /\ succeedOp = [p \in PROCS |-> FALSE]
         /\ txStatus = "none"
-        (* Procedure set_state *)
-        /\ available = [ self \in ProcSet |-> defaultInitValue]
-        /\ remaining = [ self \in ProcSet |-> defaultInitValue]
+        (* Procedure compare_and_set_state *)
+        /\ expVal = [ self \in ProcSet |-> defaultInitValue]
+        /\ newVal = [ self \in ProcSet |-> defaultInitValue]
         /\ retVal = [ self \in ProcSet |-> FALSE]
         /\ valCount = [ self \in ProcSet |-> defaultInitValue]
         (* Procedure acquire *)
@@ -176,111 +174,117 @@ Init == (* Global variables *)
         /\ remaining_ = [ self \in ProcSet |-> defaultInitValue]
         (* Procedure release *)
         /\ releases = [ self \in ProcSet |-> defaultInitValue]
-        /\ available_r = [ self \in ProcSet |-> defaultInitValue]
-        /\ remaining_r = [ self \in ProcSet |-> defaultInitValue]
+        /\ available = [ self \in ProcSet |-> defaultInitValue]
+        /\ remaining = [ self \in ProcSet |-> defaultInitValue]
         /\ stack = [self \in ProcSet |-> << >>]
         /\ pc = [self \in ProcSet |-> "u1"]
 
 ts(self) == /\ pc[self] = "ts"
-            /\ lock' = [lock EXCEPT ![self] = 1]
             /\ txStatus' = "started"
-            /\ pc' = [pc EXCEPT ![self] = "s1"]
-            /\ UNCHANGED << count, succeedOp, stack, available, remaining, 
+            /\ pc' = [pc EXCEPT ![self] = "l1"]
+            /\ UNCHANGED << count, lock, succeedOp, stack, expVal, newVal, 
                             retVal, valCount, acquires, available_, remaining_, 
-                            releases, available_r, remaining_r >>
+                            releases, available, remaining >>
+
+l1(self) == /\ pc[self] = "l1"
+            /\ lock' = [lock EXCEPT ![self] = 1]
+            /\ pc' = [pc EXCEPT ![self] = "s1"]
+            /\ UNCHANGED << count, succeedOp, txStatus, stack, expVal, newVal, 
+                            retVal, valCount, acquires, available_, remaining_, 
+                            releases, available, remaining >>
 
 s1(self) == /\ pc[self] = "s1"
             /\ valCount' = [valCount EXCEPT ![self] = count]
             /\ pc' = [pc EXCEPT ![self] = "s2"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, available, 
-                            remaining, retVal, acquires, available_, 
-                            remaining_, releases, available_r, remaining_r >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
+                            newVal, retVal, acquires, available_, remaining_, 
+                            releases, available, remaining >>
 
 s2(self) == /\ pc[self] = "s2"
-            /\ IF valCount[self] = available[self]
+            /\ IF valCount[self] = expVal[self]
                   THEN /\ retVal' = [retVal EXCEPT ![self] = TRUE]
                   ELSE /\ TRUE
                        /\ UNCHANGED retVal
             /\ pc' = [pc EXCEPT ![self] = "s3"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, available, 
-                            remaining, valCount, acquires, available_, 
-                            remaining_, releases, available_r, remaining_r >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
+                            newVal, valCount, acquires, available_, remaining_, 
+                            releases, available, remaining >>
 
 s3(self) == /\ pc[self] = "s3"
             /\ IF retVal[self]
                   THEN /\ pc' = [pc EXCEPT ![self] = "s4"]
-                  ELSE /\ pc' = [pc EXCEPT ![self] = "s5"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, available, 
-                            remaining, retVal, valCount, acquires, available_, 
-                            remaining_, releases, available_r, remaining_r >>
+                  ELSE /\ pc' = [pc EXCEPT ![self] = "l2"]
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
+                            newVal, retVal, valCount, acquires, available_, 
+                            remaining_, releases, available, remaining >>
 
 s4(self) == /\ pc[self] = "s4"
-            /\ valCount' = [valCount EXCEPT ![self] = remaining[self]]
+            /\ valCount' = [valCount EXCEPT ![self] = newVal[self]]
             /\ pc' = [pc EXCEPT ![self] = "tc"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, available, 
-                            remaining, retVal, acquires, available_, 
-                            remaining_, releases, available_r, remaining_r >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
+                            newVal, retVal, acquires, available_, remaining_, 
+                            releases, available, remaining >>
 
 tc(self) == /\ pc[self] = "tc"
             /\ IF txStatus = "started"
-                  THEN /\ lock' = [lock EXCEPT ![self] = 0]
-                       /\ count' = valCount[self]
+                  THEN /\ count' = valCount[self]
                        /\ succeedOp' = [succeedOp EXCEPT ![self] = TRUE]
                        /\ txStatus' = "committed"
                   ELSE /\ txStatus' = "aborted"
-                       /\ UNCHANGED << count, lock, succeedOp >>
-            /\ pc' = [pc EXCEPT ![self] = "s5"]
-            /\ UNCHANGED << stack, available, remaining, retVal, valCount, 
+                       /\ UNCHANGED << count, succeedOp >>
+            /\ pc' = [pc EXCEPT ![self] = "l2"]
+            /\ UNCHANGED << lock, stack, expVal, newVal, retVal, valCount, 
                             acquires, available_, remaining_, releases, 
-                            available_r, remaining_r >>
+                            available, remaining >>
+
+l2(self) == /\ pc[self] = "l2"
+            /\ lock' = [lock EXCEPT ![self] = 0]
+            /\ pc' = [pc EXCEPT ![self] = "s5"]
+            /\ UNCHANGED << count, succeedOp, txStatus, stack, expVal, newVal, 
+                            retVal, valCount, acquires, available_, remaining_, 
+                            releases, available, remaining >>
 
 s5(self) == /\ pc[self] = "s5"
-            /\ lock' = [lock EXCEPT ![self] = 0]
-            /\ pc' = [pc EXCEPT ![self] = "s6"]
-            /\ UNCHANGED << count, succeedOp, txStatus, stack, available, 
-                            remaining, retVal, valCount, acquires, available_, 
-                            remaining_, releases, available_r, remaining_r >>
-
-s6(self) == /\ pc[self] = "s6"
             /\ LocksNotExist
             /\ txStatus' = "none"
             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
             /\ retVal' = [retVal EXCEPT ![self] = Head(stack[self]).retVal]
             /\ valCount' = [valCount EXCEPT ![self] = Head(stack[self]).valCount]
-            /\ available' = [available EXCEPT ![self] = Head(stack[self]).available]
-            /\ remaining' = [remaining EXCEPT ![self] = Head(stack[self]).remaining]
+            /\ expVal' = [expVal EXCEPT ![self] = Head(stack[self]).expVal]
+            /\ newVal' = [newVal EXCEPT ![self] = Head(stack[self]).newVal]
             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
             /\ UNCHANGED << count, lock, succeedOp, acquires, available_, 
-                            remaining_, releases, available_r, remaining_r >>
+                            remaining_, releases, available, remaining >>
 
-set_state(self) == ts(self) \/ s1(self) \/ s2(self) \/ s3(self) \/ s4(self)
-                      \/ tc(self) \/ s5(self) \/ s6(self)
+compare_and_set_state(self) == ts(self) \/ l1(self) \/ s1(self) \/ s2(self)
+                                  \/ s3(self) \/ s4(self) \/ tc(self)
+                                  \/ l2(self) \/ s5(self)
 
 a1(self) == /\ pc[self] = "a1"
             /\ available_' = [available_ EXCEPT ![self] = count]
             /\ remaining_' = [remaining_ EXCEPT ![self] = available_'[self] - acquires[self]]
             /\ pc' = [pc EXCEPT ![self] = "a2"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, available, 
-                            remaining, retVal, valCount, acquires, releases, 
-                            available_r, remaining_r >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
+                            newVal, retVal, valCount, acquires, releases, 
+                            available, remaining >>
 
 a2(self) == /\ pc[self] = "a2"
             /\ remaining_[self] >= 0
-            /\ /\ available' = [available EXCEPT ![self] = available_[self]]
-               /\ remaining' = [remaining EXCEPT ![self] = remaining_[self]]
-               /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "set_state",
+            /\ /\ expVal' = [expVal EXCEPT ![self] = available_[self]]
+               /\ newVal' = [newVal EXCEPT ![self] = remaining_[self]]
+               /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "compare_and_set_state",
                                                         pc        |->  "a4",
                                                         retVal    |->  retVal[self],
                                                         valCount  |->  valCount[self],
-                                                        available |->  available[self],
-                                                        remaining |->  remaining[self] ] >>
+                                                        expVal    |->  expVal[self],
+                                                        newVal    |->  newVal[self] ] >>
                                                     \o stack[self]]
             /\ retVal' = [retVal EXCEPT ![self] = FALSE]
             /\ valCount' = [valCount EXCEPT ![self] = defaultInitValue]
             /\ pc' = [pc EXCEPT ![self] = "ts"]
             /\ UNCHANGED << count, lock, succeedOp, txStatus, acquires, 
-                            available_, remaining_, releases, available_r, 
-                            remaining_r >>
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 a4(self) == /\ pc[self] = "a4"
             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
@@ -288,54 +292,52 @@ a4(self) == /\ pc[self] = "a4"
             /\ remaining_' = [remaining_ EXCEPT ![self] = Head(stack[self]).remaining_]
             /\ acquires' = [acquires EXCEPT ![self] = Head(stack[self]).acquires]
             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, available, 
-                            remaining, retVal, valCount, releases, available_r, 
-                            remaining_r >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, expVal, newVal, 
+                            retVal, valCount, releases, available, remaining >>
 
 acquire(self) == a1(self) \/ a2(self) \/ a4(self)
 
 r1(self) == /\ pc[self] = "r1"
-            /\ available_r' = [available_r EXCEPT ![self] = count]
-            /\ remaining_r' = [remaining_r EXCEPT ![self] = available_r'[self] + releases[self]]
+            /\ available' = [available EXCEPT ![self] = count]
+            /\ remaining' = [remaining EXCEPT ![self] = available'[self] + releases[self]]
             /\ pc' = [pc EXCEPT ![self] = "r2"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, available, 
-                            remaining, retVal, valCount, acquires, available_, 
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
+                            newVal, retVal, valCount, acquires, available_, 
                             remaining_, releases >>
 
 r2(self) == /\ pc[self] = "r2"
-            /\ /\ available' = [available EXCEPT ![self] = available_r[self]]
-               /\ remaining' = [remaining EXCEPT ![self] = remaining_r[self]]
-               /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "set_state",
+            /\ /\ expVal' = [expVal EXCEPT ![self] = available[self]]
+               /\ newVal' = [newVal EXCEPT ![self] = remaining[self]]
+               /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "compare_and_set_state",
                                                         pc        |->  "r3",
                                                         retVal    |->  retVal[self],
                                                         valCount  |->  valCount[self],
-                                                        available |->  available[self],
-                                                        remaining |->  remaining[self] ] >>
+                                                        expVal    |->  expVal[self],
+                                                        newVal    |->  newVal[self] ] >>
                                                     \o stack[self]]
             /\ retVal' = [retVal EXCEPT ![self] = FALSE]
             /\ valCount' = [valCount EXCEPT ![self] = defaultInitValue]
             /\ pc' = [pc EXCEPT ![self] = "ts"]
             /\ UNCHANGED << count, lock, succeedOp, txStatus, acquires, 
-                            available_, remaining_, releases, available_r, 
-                            remaining_r >>
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 r3(self) == /\ pc[self] = "r3"
             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-            /\ available_r' = [available_r EXCEPT ![self] = Head(stack[self]).available_r]
-            /\ remaining_r' = [remaining_r EXCEPT ![self] = Head(stack[self]).remaining_r]
+            /\ available' = [available EXCEPT ![self] = Head(stack[self]).available]
+            /\ remaining' = [remaining EXCEPT ![self] = Head(stack[self]).remaining]
             /\ releases' = [releases EXCEPT ![self] = Head(stack[self]).releases]
             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, available, 
-                            remaining, retVal, valCount, acquires, available_, 
-                            remaining_ >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, expVal, newVal, 
+                            retVal, valCount, acquires, available_, remaining_ >>
 
 release(self) == r1(self) \/ r2(self) \/ r3(self)
 
 u1(self) == /\ pc[self] = "u1"
             /\ pc' = [pc EXCEPT ![self] = "u2"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, available, 
-                            remaining, retVal, valCount, acquires, available_, 
-                            remaining_, releases, available_r, remaining_r >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
+                            newVal, retVal, valCount, acquires, available_, 
+                            remaining_, releases, available, remaining >>
 
 u2(self) == /\ pc[self] = "u2"
             /\ IF succeedOp[self] = FALSE
@@ -353,41 +355,39 @@ u2(self) == /\ pc[self] = "u2"
                   ELSE /\ succeedOp' = [succeedOp EXCEPT ![self] = FALSE]
                        /\ pc' = [pc EXCEPT ![self] = "cs"]
                        /\ UNCHANGED << stack, acquires, available_, remaining_ >>
-            /\ UNCHANGED << count, lock, txStatus, available, remaining, 
-                            retVal, valCount, releases, available_r, 
-                            remaining_r >>
+            /\ UNCHANGED << count, lock, txStatus, expVal, newVal, retVal, 
+                            valCount, releases, available, remaining >>
 
 cs(self) == /\ pc[self] = "cs"
             /\ TRUE
             /\ pc' = [pc EXCEPT ![self] = "u3"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, available, 
-                            remaining, retVal, valCount, acquires, available_, 
-                            remaining_, releases, available_r, remaining_r >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
+                            newVal, retVal, valCount, acquires, available_, 
+                            remaining_, releases, available, remaining >>
 
 u3(self) == /\ pc[self] = "u3"
             /\ IF succeedOp[self] = FALSE
                   THEN /\ /\ releases' = [releases EXCEPT ![self] = NUM_OF_PERMITS]
                           /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "release",
                                                                    pc        |->  "u3",
-                                                                   available_r |->  available_r[self],
-                                                                   remaining_r |->  remaining_r[self],
+                                                                   available |->  available[self],
+                                                                   remaining |->  remaining[self],
                                                                    releases  |->  releases[self] ] >>
                                                                \o stack[self]]
-                       /\ available_r' = [available_r EXCEPT ![self] = defaultInitValue]
-                       /\ remaining_r' = [remaining_r EXCEPT ![self] = defaultInitValue]
+                       /\ available' = [available EXCEPT ![self] = defaultInitValue]
+                       /\ remaining' = [remaining EXCEPT ![self] = defaultInitValue]
                        /\ pc' = [pc EXCEPT ![self] = "r1"]
                        /\ UNCHANGED succeedOp
                   ELSE /\ succeedOp' = [succeedOp EXCEPT ![self] = FALSE]
                        /\ pc' = [pc EXCEPT ![self] = "u1"]
-                       /\ UNCHANGED << stack, releases, available_r, 
-                                       remaining_r >>
-            /\ UNCHANGED << count, lock, txStatus, available, remaining, 
-                            retVal, valCount, acquires, available_, remaining_ >>
+                       /\ UNCHANGED << stack, releases, available, remaining >>
+            /\ UNCHANGED << count, lock, txStatus, expVal, newVal, retVal, 
+                            valCount, acquires, available_, remaining_ >>
 
 proc(self) == u1(self) \/ u2(self) \/ cs(self) \/ u3(self)
 
-Next == (\E self \in ProcSet:  \/ set_state(self) \/ acquire(self)
-                               \/ release(self))
+Next == (\E self \in ProcSet:  \/ compare_and_set_state(self)
+                               \/ acquire(self) \/ release(self))
            \/ (\E self \in PROCS: proc(self))
 
 Spec == Init /\ [][Next]_vars
@@ -395,5 +395,5 @@ Spec == Init /\ [][Next]_vars
 \* END TRANSLATION
 =============================================================================
 \* Modification History
-\* Last modified Fri Jun 12 02:48:47 MSK 2020 by anastasia
+\* Last modified Sat Jun 13 16:59:03 MSK 2020 by anastasia
 \* Created Tue Mar 24 22:27:24 MSK 2020 by anastasia
