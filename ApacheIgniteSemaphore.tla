@@ -16,7 +16,8 @@ variables
     count = SEMAFORE_CAPACITY;  
     lock = [p \in PROCS |-> 0];
     succeedOp = [p \in PROCS |-> FALSE];
-    txStatus = "none";
+    txStatus = [p \in PROCS |-> "none"];
+    opIndicator = [p \in PROCS |-> "none"];
     
 define {
 
@@ -24,25 +25,37 @@ define {
     
     ExcInv == Cardinality({p \in PROCS: pc[p] = "cs"}) * NUM_OF_PERMITS <= SEMAFORE_CAPACITY
     
-    TxInv == txStatus \in {"none", "started", "committed", "aborted"}
+    PermitInv == Cardinality({p \in PROCS: \/ pc[p] = "cs"
+                                           \/ /\ pc[p] \in {"l2", "s5", "a1", "a4"}
+                                              /\ opIndicator[p] = "acquire" 
+                                              /\ succeedOp[p] 
+                                          \/ pc[p] = "u3"                
+                                          \/ /\ pc[p] \in {"r1", "r2", "ts", "l1", "s1", "s2", "s3", "s4", "tc", "l2", "s5"}
+                                             /\ opIndicator[p] = "release"
+                                             /\ succeedOp[p] = FALSE }) * NUM_OF_PERMITS + count = SEMAFORE_CAPACITY
+
+    
+    TxInv == \A p \in PROCS : txStatus[p] \in {"none", "started", "committed", "aborted"}
                                             
-    LocksNotExist == \A p \in PROCS : lock[p] = 0                              
-                                                
+    LocksNotExist == \A p \in PROCS : lock[p] = 0
+    
+    CommitAvailable == \A p \in PROCS : \/ txStatus[p] = "none"
+                                        \/ txStatus[p] = "started"                                                               
 }
 
-macro start_transaction()
+macro start_transaction(p)
 {
-      txStatus := "started";      
+      txStatus[p] := "started";      
 }
 
-macro commit_transaction(valCount)
+macro commit_transaction(p, valCount)
 {
-      if (txStatus = "started") {
+      if (CommitAvailable) {
            count := valCount;
            succeedOp[self] := TRUE;
-           txStatus := "committed";
+           txStatus[p] := "committed";
       } else {
-           txStatus := "aborted";
+           txStatus[p] := "aborted";
       }
 }
 
@@ -52,7 +65,7 @@ variables
     retVal = FALSE;
     valCount;
 {
-ts:        start_transaction();
+ts:        start_transaction(self);
 
 l1:        lock[self] := 1;
 
@@ -67,14 +80,14 @@ s3:        if (retVal) {
 
 s4:            valCount := newVal;
 
-tc:            commit_transaction(valCount);
+tc:            commit_transaction(self, valCount);
                                                                            
            };
 
 l2:        lock[self] := 0;
            
 s5:        await LocksNotExist;
-           txStatus := "none";
+           txStatus[self] := "none";
 
            return; 
 }
@@ -120,35 +133,50 @@ process (proc \in PROCS)
     {
 u1:   while (TRUE) {
 
-u2:         call acquire(NUM_OF_PERMITS);            
+u2:         opIndicator[self] := "acquire";
+            call acquire(NUM_OF_PERMITS);            
 cs:         skip;
-u3:         call release(NUM_OF_PERMITS);
+u3:         opIndicator[self] := "release";
+            call release(NUM_OF_PERMITS);
       }
     }
 }
 
  ***************************************************************************)
 \* BEGIN TRANSLATIONNUMberNUMberNUMber
-\* Procedure variable available of procedure acquire at line 85 col 5 changed to available_
-\* Procedure variable remaining of procedure acquire at line 86 col 5 changed to remaining_
+\* Procedure variable available of procedure acquire at line 98 col 5 changed to available_
+\* Procedure variable remaining of procedure acquire at line 99 col 5 changed to remaining_
 CONSTANT defaultInitValue
-VARIABLES count, lock, succeedOp, txStatus, pc, stack
+VARIABLES count, lock, succeedOp, txStatus, opIndicator, pc, stack
 
 (* define statement *)
 TypeInv == count \in 0..SEMAFORE_CAPACITY
 
 ExcInv == Cardinality({p \in PROCS: pc[p] = "cs"}) * NUM_OF_PERMITS <= SEMAFORE_CAPACITY
 
-TxInv == txStatus \in {"none", "started", "committed", "aborted"}
+PermitInv == Cardinality({p \in PROCS: \/ pc[p] = "cs"
+                                       \/ /\ pc[p] \in {"l2", "s5", "a1", "a4"}
+                                          /\ opIndicator[p] = "acquire"
+                                          /\ succeedOp[p]
+                                      \/ pc[p] = "u3"
+                                      \/ /\ pc[p] \in {"r1", "r2", "ts", "l1", "s1", "s2", "s3", "s4", "tc", "l2", "s5"}
+                                         /\ opIndicator[p] = "release"
+                                         /\ succeedOp[p] = FALSE }) * NUM_OF_PERMITS + count = SEMAFORE_CAPACITY
+
+
+TxInv == \A p \in PROCS : txStatus[p] \in {"none", "started", "committed", "aborted"}
 
 LocksNotExist == \A p \in PROCS : lock[p] = 0
+
+CommitAvailable == \A p \in PROCS : \/ txStatus[p] = "none"
+                                    \/ txStatus[p] = "started"
 
 VARIABLES expVal, newVal, retVal, valCount, acquires, available_, remaining_, 
           releases, available, remaining
 
-vars == << count, lock, succeedOp, txStatus, pc, stack, expVal, newVal, 
-           retVal, valCount, acquires, available_, remaining_, releases, 
-           available, remaining >>
+vars == << count, lock, succeedOp, txStatus, opIndicator, pc, stack, expVal, 
+           newVal, retVal, valCount, acquires, available_, remaining_, 
+           releases, available, remaining >>
 
 ProcSet == (PROCS)
 
@@ -156,7 +184,8 @@ Init == (* Global variables *)
         /\ count = SEMAFORE_CAPACITY
         /\ lock = [p \in PROCS |-> 0]
         /\ succeedOp = [p \in PROCS |-> FALSE]
-        /\ txStatus = "none"
+        /\ txStatus = [p \in PROCS |-> "none"]
+        /\ opIndicator = [p \in PROCS |-> "none"]
         (* Procedure compare_and_set_state *)
         /\ expVal = [ self \in ProcSet |-> defaultInitValue]
         /\ newVal = [ self \in ProcSet |-> defaultInitValue]
@@ -174,25 +203,27 @@ Init == (* Global variables *)
         /\ pc = [self \in ProcSet |-> "u1"]
 
 ts(self) == /\ pc[self] = "ts"
-            /\ txStatus' = "started"
+            /\ txStatus' = [txStatus EXCEPT ![self] = "started"]
             /\ pc' = [pc EXCEPT ![self] = "l1"]
-            /\ UNCHANGED << count, lock, succeedOp, stack, expVal, newVal, 
-                            retVal, valCount, acquires, available_, remaining_, 
-                            releases, available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, opIndicator, stack, expVal, 
+                            newVal, retVal, valCount, acquires, available_, 
+                            remaining_, releases, available, remaining >>
 
 l1(self) == /\ pc[self] = "l1"
             /\ lock' = [lock EXCEPT ![self] = 1]
             /\ pc' = [pc EXCEPT ![self] = "s1"]
-            /\ UNCHANGED << count, succeedOp, txStatus, stack, expVal, newVal, 
-                            retVal, valCount, acquires, available_, remaining_, 
-                            releases, available, remaining >>
+            /\ UNCHANGED << count, succeedOp, txStatus, opIndicator, stack, 
+                            expVal, newVal, retVal, valCount, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 s1(self) == /\ pc[self] = "s1"
             /\ valCount' = [valCount EXCEPT ![self] = count]
             /\ pc' = [pc EXCEPT ![self] = "s2"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
-                            newVal, retVal, acquires, available_, remaining_, 
-                            releases, available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            stack, expVal, newVal, retVal, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 s2(self) == /\ pc[self] = "s2"
             /\ IF valCount[self] = expVal[self]
@@ -200,55 +231,60 @@ s2(self) == /\ pc[self] = "s2"
                   ELSE /\ TRUE
                        /\ UNCHANGED retVal
             /\ pc' = [pc EXCEPT ![self] = "s3"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
-                            newVal, valCount, acquires, available_, remaining_, 
-                            releases, available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            stack, expVal, newVal, valCount, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 s3(self) == /\ pc[self] = "s3"
             /\ IF retVal[self]
                   THEN /\ pc' = [pc EXCEPT ![self] = "s4"]
                   ELSE /\ pc' = [pc EXCEPT ![self] = "l2"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
-                            newVal, retVal, valCount, acquires, available_, 
-                            remaining_, releases, available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            stack, expVal, newVal, retVal, valCount, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 s4(self) == /\ pc[self] = "s4"
             /\ valCount' = [valCount EXCEPT ![self] = newVal[self]]
             /\ pc' = [pc EXCEPT ![self] = "tc"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
-                            newVal, retVal, acquires, available_, remaining_, 
-                            releases, available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            stack, expVal, newVal, retVal, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 tc(self) == /\ pc[self] = "tc"
-            /\ IF txStatus = "started"
+            /\ IF CommitAvailable
                   THEN /\ count' = valCount[self]
                        /\ succeedOp' = [succeedOp EXCEPT ![self] = TRUE]
-                       /\ txStatus' = "committed"
-                  ELSE /\ txStatus' = "aborted"
+                       /\ txStatus' = [txStatus EXCEPT ![self] = "committed"]
+                  ELSE /\ txStatus' = [txStatus EXCEPT ![self] = "aborted"]
                        /\ UNCHANGED << count, succeedOp >>
             /\ pc' = [pc EXCEPT ![self] = "l2"]
-            /\ UNCHANGED << lock, stack, expVal, newVal, retVal, valCount, 
-                            acquires, available_, remaining_, releases, 
-                            available, remaining >>
+            /\ UNCHANGED << lock, opIndicator, stack, expVal, newVal, retVal, 
+                            valCount, acquires, available_, remaining_, 
+                            releases, available, remaining >>
 
 l2(self) == /\ pc[self] = "l2"
             /\ lock' = [lock EXCEPT ![self] = 0]
             /\ pc' = [pc EXCEPT ![self] = "s5"]
-            /\ UNCHANGED << count, succeedOp, txStatus, stack, expVal, newVal, 
-                            retVal, valCount, acquires, available_, remaining_, 
-                            releases, available, remaining >>
+            /\ UNCHANGED << count, succeedOp, txStatus, opIndicator, stack, 
+                            expVal, newVal, retVal, valCount, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 s5(self) == /\ pc[self] = "s5"
             /\ LocksNotExist
-            /\ txStatus' = "none"
+            /\ txStatus' = [txStatus EXCEPT ![self] = "none"]
             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
             /\ retVal' = [retVal EXCEPT ![self] = Head(stack[self]).retVal]
             /\ valCount' = [valCount EXCEPT ![self] = Head(stack[self]).valCount]
             /\ expVal' = [expVal EXCEPT ![self] = Head(stack[self]).expVal]
             /\ newVal' = [newVal EXCEPT ![self] = Head(stack[self]).newVal]
             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-            /\ UNCHANGED << count, lock, succeedOp, acquires, available_, 
-                            remaining_, releases, available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, opIndicator, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 compare_and_set_state(self) == ts(self) \/ l1(self) \/ s1(self) \/ s2(self)
                                   \/ s3(self) \/ s4(self) \/ tc(self)
@@ -261,9 +297,9 @@ a1(self) == /\ pc[self] = "a1"
                        /\ pc' = [pc EXCEPT ![self] = "a2"]
                   ELSE /\ pc' = [pc EXCEPT ![self] = "a4"]
                        /\ UNCHANGED << available_, remaining_ >>
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
-                            newVal, retVal, valCount, acquires, releases, 
-                            available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            stack, expVal, newVal, retVal, valCount, acquires, 
+                            releases, available, remaining >>
 
 a2(self) == /\ pc[self] = "a2"
             /\ remaining_[self] >= 0
@@ -279,9 +315,9 @@ a2(self) == /\ pc[self] = "a2"
             /\ retVal' = [retVal EXCEPT ![self] = FALSE]
             /\ valCount' = [valCount EXCEPT ![self] = defaultInitValue]
             /\ pc' = [pc EXCEPT ![self] = "ts"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, acquires, 
-                            available_, remaining_, releases, available, 
-                            remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            acquires, available_, remaining_, releases, 
+                            available, remaining >>
 
 a4(self) == /\ pc[self] = "a4"
             /\ succeedOp' = [succeedOp EXCEPT ![self] = FALSE]
@@ -290,8 +326,8 @@ a4(self) == /\ pc[self] = "a4"
             /\ remaining_' = [remaining_ EXCEPT ![self] = Head(stack[self]).remaining_]
             /\ acquires' = [acquires EXCEPT ![self] = Head(stack[self]).acquires]
             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-            /\ UNCHANGED << count, lock, txStatus, expVal, newVal, retVal, 
-                            valCount, releases, available, remaining >>
+            /\ UNCHANGED << count, lock, txStatus, opIndicator, expVal, newVal, 
+                            retVal, valCount, releases, available, remaining >>
 
 acquire(self) == a1(self) \/ a2(self) \/ a4(self)
 
@@ -302,9 +338,9 @@ r1(self) == /\ pc[self] = "r1"
                        /\ pc' = [pc EXCEPT ![self] = "r2"]
                   ELSE /\ pc' = [pc EXCEPT ![self] = "r3"]
                        /\ UNCHANGED << available, remaining >>
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
-                            newVal, retVal, valCount, acquires, available_, 
-                            remaining_, releases >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            stack, expVal, newVal, retVal, valCount, acquires, 
+                            available_, remaining_, releases >>
 
 r2(self) == /\ pc[self] = "r2"
             /\ /\ expVal' = [expVal EXCEPT ![self] = available[self]]
@@ -319,9 +355,9 @@ r2(self) == /\ pc[self] = "r2"
             /\ retVal' = [retVal EXCEPT ![self] = FALSE]
             /\ valCount' = [valCount EXCEPT ![self] = defaultInitValue]
             /\ pc' = [pc EXCEPT ![self] = "ts"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, acquires, 
-                            available_, remaining_, releases, available, 
-                            remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            acquires, available_, remaining_, releases, 
+                            available, remaining >>
 
 r3(self) == /\ pc[self] = "r3"
             /\ succeedOp' = [succeedOp EXCEPT ![self] = FALSE]
@@ -330,18 +366,20 @@ r3(self) == /\ pc[self] = "r3"
             /\ remaining' = [remaining EXCEPT ![self] = Head(stack[self]).remaining]
             /\ releases' = [releases EXCEPT ![self] = Head(stack[self]).releases]
             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-            /\ UNCHANGED << count, lock, txStatus, expVal, newVal, retVal, 
-                            valCount, acquires, available_, remaining_ >>
+            /\ UNCHANGED << count, lock, txStatus, opIndicator, expVal, newVal, 
+                            retVal, valCount, acquires, available_, remaining_ >>
 
 release(self) == r1(self) \/ r2(self) \/ r3(self)
 
 u1(self) == /\ pc[self] = "u1"
             /\ pc' = [pc EXCEPT ![self] = "u2"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
-                            newVal, retVal, valCount, acquires, available_, 
-                            remaining_, releases, available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            stack, expVal, newVal, retVal, valCount, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 u2(self) == /\ pc[self] = "u2"
+            /\ opIndicator' = [opIndicator EXCEPT ![self] = "acquire"]
             /\ /\ acquires' = [acquires EXCEPT ![self] = NUM_OF_PERMITS]
                /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "acquire",
                                                         pc        |->  "cs",
@@ -358,11 +396,13 @@ u2(self) == /\ pc[self] = "u2"
 cs(self) == /\ pc[self] = "cs"
             /\ TRUE
             /\ pc' = [pc EXCEPT ![self] = "u3"]
-            /\ UNCHANGED << count, lock, succeedOp, txStatus, stack, expVal, 
-                            newVal, retVal, valCount, acquires, available_, 
-                            remaining_, releases, available, remaining >>
+            /\ UNCHANGED << count, lock, succeedOp, txStatus, opIndicator, 
+                            stack, expVal, newVal, retVal, valCount, acquires, 
+                            available_, remaining_, releases, available, 
+                            remaining >>
 
 u3(self) == /\ pc[self] = "u3"
+            /\ opIndicator' = [opIndicator EXCEPT ![self] = "release"]
             /\ /\ releases' = [releases EXCEPT ![self] = NUM_OF_PERMITS]
                /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "release",
                                                         pc        |->  "u1",
@@ -387,5 +427,5 @@ Spec == Init /\ [][Next]_vars
 \* END TRANSLATION
 =============================================================================
 \* Modification History
-\* Last modified Thu Jun 18 23:03:39 MSK 2020 by anastasia
+\* Last modified Fri Jun 19 02:20:03 MSK 2020 by anastasia
 \* Created Tue Mar 24 22:27:24 MSK 2020 by anastasia
