@@ -52,16 +52,14 @@ ts1:      txStatus[self] := "started";
 
 procedure commit_transaction(valCount)
 {
-tc1:       if (CommitAvailable) {            
+tc1:       if (CommitAvailable) {     
+               count := valCount;
+               succeedOp[self] := TRUE;       
                txStatus[self] := "committed";
            } else {
                txStatus[self] := "aborted"
            };
 tc2:       await ReadyToCommit; 
-           if (txStatus[self] = "committed") {
-              count := valCount;
-              succeedOp[self] := TRUE
-           };
            txStatus[self] := "none";    
            return;
 }
@@ -140,9 +138,9 @@ u3:            call release(NUM_OF_PERMITS);
 
  ***************************************************************************)
 \* BEGIN TRANSLATIONNUMberNUMberNUMber
-\* Procedure variable valCount of procedure compare_and_set_state at line 73 col 5 changed to valCount_
-\* Procedure variable available of procedure acquire at line 96 col 5 changed to available_
-\* Procedure variable remaining of procedure acquire at line 97 col 5 changed to remaining_
+\* Procedure variable valCount of procedure compare_and_set_state at line 71 col 5 changed to valCount_
+\* Procedure variable available of procedure acquire at line 94 col 5 changed to available_
+\* Procedure variable remaining of procedure acquire at line 95 col 5 changed to remaining_
 CONSTANT defaultInitValue
 VARIABLES count, succeedOp, txStatus, opIndicator, pc, stack
 
@@ -214,28 +212,25 @@ start_transaction(self) == ts1(self)
 
 tc1(self) == /\ pc[self] = "tc1"
              /\ IF CommitAvailable
-                   THEN /\ txStatus' = [txStatus EXCEPT ![self] = "committed"]
+                   THEN /\ count' = valCount[self]
+                        /\ succeedOp' = [succeedOp EXCEPT ![self] = TRUE]
+                        /\ txStatus' = [txStatus EXCEPT ![self] = "committed"]
                    ELSE /\ txStatus' = [txStatus EXCEPT ![self] = "aborted"]
+                        /\ UNCHANGED << count, succeedOp >>
              /\ pc' = [pc EXCEPT ![self] = "tc2"]
-             /\ UNCHANGED << count, succeedOp, opIndicator, stack, valCount, 
-                             expVal, newVal, retVal, valCount_, acquires, 
-                             available_, remaining_, releases, available, 
-                             remaining >>
+             /\ UNCHANGED << opIndicator, stack, valCount, expVal, newVal, 
+                             retVal, valCount_, acquires, available_, 
+                             remaining_, releases, available, remaining >>
 
 tc2(self) == /\ pc[self] = "tc2"
              /\ ReadyToCommit
-             /\ IF txStatus[self] = "committed"
-                   THEN /\ count' = valCount[self]
-                        /\ succeedOp' = [succeedOp EXCEPT ![self] = TRUE]
-                   ELSE /\ TRUE
-                        /\ UNCHANGED << count, succeedOp >>
              /\ txStatus' = [txStatus EXCEPT ![self] = "none"]
              /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
              /\ valCount' = [valCount EXCEPT ![self] = Head(stack[self]).valCount]
              /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-             /\ UNCHANGED << opIndicator, expVal, newVal, retVal, valCount_, 
-                             acquires, available_, remaining_, releases, 
-                             available, remaining >>
+             /\ UNCHANGED << count, succeedOp, opIndicator, expVal, newVal, 
+                             retVal, valCount_, acquires, available_, 
+                             remaining_, releases, available, remaining >>
 
 commit_transaction(self) == tc1(self) \/ tc2(self)
 
@@ -451,5 +446,5 @@ Spec == Init /\ [][Next]_vars
 \* END TRANSLATION
 =============================================================================
 \* Modification History
-\* Last modified Sat Jun 20 22:02:40 MSK 2020 by anastasia
+\* Last modified Sat Jun 20 23:09:59 MSK 2020 by anastasia
 \* Created Tue Mar 24 22:27:24 MSK 2020 by anastasia
