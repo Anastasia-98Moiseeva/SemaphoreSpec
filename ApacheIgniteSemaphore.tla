@@ -54,7 +54,7 @@ macro commit_transaction(valCount)
            };
 }
 
-macro refresh_permit_num(p, val)
+macro add_permit_num(p, val)
 {
            if (txStatus[self] # "aborted") {
                permitNum[p] := permitNum[p] + val;
@@ -80,7 +80,7 @@ s3:        if (retVal) {
 s4:            valCount := newVal;
 
 tc:            commit_transaction(valCount);
-               refresh_permit_num(self, expVal - newVal);
+               add_permit_num(self, expVal - newVal);
            };           
 s5:        return; 
 
@@ -427,5 +427,5 @@ Spec == Init /\ [][Next]_vars
 \* END TRANSLATION
 =============================================================================
 \* Modification History
-\* Last modified Tue Jun 23 00:39:20 MSK 2020 by anastasia
+\* Last modified Tue Jun 23 00:46:25 MSK 2020 by anastasia
 \* Created Tue Mar 24 22:27:24 MSK 2020 by anastasia
